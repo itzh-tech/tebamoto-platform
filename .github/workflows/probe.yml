@@ -1,0 +1,27 @@
+name: probe
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect OIDC subject
+        run: |
+          set -u
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
+          echo "jwt_len=${#JWT}"
+          echo "$JWT" | cut -d. -f2 | python3 -c '
+          import sys,base64,json
+          raw=sys.stdin.read().strip().replace("-","+").replace("_","/")
+          raw+="="*((4-len(raw)%4)%4)
+          d=json.loads(base64.b64decode(raw))
+          for k in ("sub","iss","aud","repository","repository_owner","workflow","ref","event_name","actor","runner_environment"):
+              print(k,"=",d.get(k))
+          '
