@@ -9,8 +9,12 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: 72ff278a-9e71-43ec-bac4-2ca303f8e462
+      AZURE_TENANT_ID: 3205c325-06a5-4171-9ce8-ffc5e6c2845e
+      AZURE_SUBSCRIPTION_ID: c5e4e004-b42d-4ac4-a502-5fd338380eb6
     steps:
-      - name: Inspect OIDC subject
+      - name: Exchange
         run: |
           set -u
           JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
@@ -22,6 +26,21 @@ jobs:
           raw=sys.stdin.read().strip().replace("-","+").replace("_","/")
           raw+="="*((4-len(raw)%4)%4)
           d=json.loads(base64.b64decode(raw))
-          for k in ("sub","iss","aud","repository","repository_owner","workflow","ref","event_name","actor","runner_environment"):
-              print(k,"=",d.get(k))
-          '
+          print("sub =",d.get("sub"))'
+          RESP=$(curl -sS -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" \
+            -d "client_id=${AZURE_CLIENT_ID}" \
+            -d "scope=https://management.azure.com/.default" \
+            -d "grant_type=client_credentials" \
+            -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+            --data-urlencode "client_assertion=${JWT}")
+          echo "$RESP" | python3 -c '
+          import sys,json
+          try:
+            d=json.loads(sys.stdin.read())
+            if "access_token" in d:
+              print("OK tok_len=",len(d["access_token"]),"exp=",d.get("expires_in"))
+            else:
+              print("ERR",d.get("error"))
+              print("DESC",d.get("error_description",""))
+          except Exception as e:
+            print("parse",e)'
